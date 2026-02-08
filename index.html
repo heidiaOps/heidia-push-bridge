@@ -3,101 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <title>Heidia - אישור התראות</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <style>
         body { font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f8fafc; }
-        .box { background: white; padding: 40px; border-radius: 20px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 90%; width: 350px; }
-        
-        /* עיצוב הכפתור */
-        button { background: #E11D48; color: white; border: none; padding: 16px 32px; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1.1rem; width: 100%; transition: all 0.3s; }
-        
-        /* כשהכפתור במצב "נטען" הוא יהיה אפור */
-        button:disabled { background: #cbd5e1; cursor: wait; opacity: 0.7; }
-        
+        .box { background: white; padding: 40px; border-radius: 20px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 90%; }
+        button { background: #E11D48; color: white; border: none; padding: 16px 32px; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1.1rem; }
         #status { margin-top: 20px; color: #64748b; font-size: 0.9rem; }
     </style>
 </head>
 <body>
     <div class="box">
         <h2>הפעלת התראות Heidia</h2>
-        <p>לחץ כדי לקשר את המכשיר ולקבל עדכונים.</p>
-        
-        <button id="reg-btn" disabled>טוען מערכת...</button>
-        
-        <div id="status">מאתחל...</div>
+        <p>לחץ על הכפתור כדי לקשר את המכשיר ולקבל עדכונים מהשטח.</p>
+        <button id="reg-btn">אשר קבלת התראות</button>
+        <div id="status">ממתין לפעולה...</div>
     </div>
 
     <script>
+        // שליפת ה-ID של המשתמש מהכתובת (למשל ?uid=123)
         const params = new URLSearchParams(window.location.search);
         const userId = params.get('uid');
 
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         window.OneSignalDeferred.push(async (OneSignal) => {
-            
-            // 1. אתחול
             await OneSignal.init({
-                appId: "c86fd007-74ba-4668-b186-52156233ead7",
+                appId: "c86fd007-74ba-4668-b186-52156233ead7", // ה-App ID של Heidia
             });
 
             const btn = document.getElementById('reg-btn');
             const status = document.getElementById('status');
 
-            // 2. זיהוי משתמש (חובה כדי שיופיע בסינגל!)
-            if (userId) {
-                status.innerText = "מזהה משתמש...";
-                // הפקודה הזו מחברת את המכשיר לשם המשתמש שלך בסינגל
-                await OneSignal.login(userId);
-            }
-
-            // 3. רק אחרי שהזיהוי הצליח - הכפתור נדלק
-            btn.innerText = "אשר קבלת התראות";
-            btn.disabled = false;
-            status.innerText = "מוכן לחיבור.";
-
             btn.onclick = async () => {
-                // נועלים את הכפתור שלא ילחצו פעמיים
-                btn.disabled = true;
-                btn.innerText = "מבקש אישור...";
+                status.innerText = "מבקש הרשאה מהדפדפן...";
+                await OneSignal.Slidedown.promptPush();
                 
-                try {
-                    // בקשת הרשאה מהדפדפן
-                    await OneSignal.Slidedown.promptPush();
-
-                    // בדיקה אם התקבל מזהה מכשיר (Player ID)
-                    const checkAndSync = async () => {
-                        const playerId = OneSignal.User.PushSubscription.id;
-                        
-                        if (playerId) {
-                            status.innerText = "שומר נתונים...";
-                            
-                            // שליחה לבייס (החלק שעבד לך)
-                            await fetch('https://app-e4891bd6.base44.app/functions/sendPushNotification', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ playerID: playerId, externalUserId: userId })
-                            });
-
-                            // --- כאן הכפתור נעלם ---
-                            status.innerText = "✅ המכשיר קושר בהצלחה!";
-                            status.style.color = "green";
-                            btn.style.display = 'none'; 
-                        }
-                    };
-
-                    OneSignal.User.PushSubscription.addEventListener("change", checkAndSync);
-                    
-                    // בדיקה יזומה למקרה שכבר יש ID
-                    if (OneSignal.User.PushSubscription.id) {
-                        checkAndSync();
+                // בדיקת ה-ID ושליחה לבאקאנד
+                const checkAndSync = async () => {
+                    const playerId = OneSignal.User.PushSubscription.id;
+                    if (playerId) {
+                        status.innerText = "סנכרון מול Heidia...";
+                        await fetch('https://app-e4891bd6.base44.app/functions/sendPushNotification', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ playerID: playerId, externalUserId: userId })
+                        });
+                        status.innerText = "✅ המכשיר קושר בהצלחה! ניתן לסגור דף זה.";
+                        btn.disabled = true;
+                        btn.style.background = "#cbd5e1";
                     }
+                };
 
-                } catch (e) {
-                    console.error(e);
-                    status.innerText = "שגיאה: " + e.message;
-                    btn.disabled = false;
-                    btn.innerText = "נסה שוב";
-                }
+                OneSignal.User.PushSubscription.addEventListener("change", checkAndSync);
+                checkAndSync();
             };
         });
     </script>
