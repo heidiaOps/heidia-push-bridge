@@ -22,14 +22,13 @@
     </div>
 
     <script>
-        // 1. שליפת המזהה מהכתובת
         const params = new URLSearchParams(window.location.search);
         const userId = params.get('uid');
 
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         window.OneSignalDeferred.push(async (OneSignal) => {
             
-            // 2. אתחול
+            // 1. אתחול בלבד (בלי לוגין עדיין)
             await OneSignal.init({
                 appId: "c86fd007-74ba-4668-b186-52156233ead7",
             });
@@ -38,51 +37,50 @@
             const status = document.getElementById('status');
             status.innerText = "מוכן לחיבור.";
 
-            // 3. התיקון הקריטי: חיבור היוזר ל-OneSignal
-            // זה מה שהיה חסר בקוד הקודם!
-            if (userId) {
-                console.log("Identifying User:", userId);
-                await OneSignal.login(userId);
-            }
-
             btn.onclick = async () => {
                 btn.disabled = true;
-                status.innerText = "מבקש הרשאה...";
                 
                 try {
-                    // בקשת אישור
+                    // 2. שלב ראשון: חיבור המשתמש לסיגנל (Login)
+                    if (userId) {
+                        status.innerText = "מזהה משתמש...";
+                        console.log("Logging in:", userId);
+                        await OneSignal.login(userId);
+                    }
+
+                    // 3. שלב שני: בקשת אישור מהדפדפן
+                    status.innerText = "מבקש הרשאה...";
                     await OneSignal.Slidedown.promptPush();
-                    
-                    // פונקציה לבדיקת הרישום ושמירה בבייס
+
+                    // 4. שלב שלישי: בדיקה ושמירה בבייס
                     const checkAndSync = async () => {
+                        // בדיקה אם המכשיר נרשם
                         const playerId = OneSignal.User.PushSubscription.id;
                         
                         if (playerId) {
-                            status.innerText = "שומר נתונים...";
+                            status.innerText = "שומר בבסיס הנתונים...";
                             
-                            // קריאה לפונקציה שעבדה לך בבייס44
+                            // שליחה ל-Cloud Function שעבד לך מצוין
                             await fetch('https://app-e4891bd6.base44.app/functions/sendPushNotification', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ playerID: playerId, externalUserId: userId })
                             });
 
-                            // הצלחה!
                             status.innerText = "✅ המכשיר קושר בהצלחה!";
                             status.style.color = "green";
-                            
-                            // 4. העלמת הכפתור (כמו שביקשת)
-                            btn.style.display = 'none';
+                            btn.style.display = 'none'; // מעלים את הכפתור
                         }
                     };
 
-                    // בדיקה כפולה (גם מיד וגם בהאזנה לשינוי)
+                    // מאזין לשינויים בסטטוס ההרשמה
                     OneSignal.User.PushSubscription.addEventListener("change", checkAndSync);
+                    // בודק גם באופן יזום
                     checkAndSync();
 
                 } catch (e) {
-                    console.error(e);
-                    status.innerText = "שגיאה בתהליך הרישום";
+                    console.error("Error:", e);
+                    status.innerText = "שגיאה: " + e.message;
                     btn.disabled = false;
                 }
             };
