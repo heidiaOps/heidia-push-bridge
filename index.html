@@ -21,6 +21,7 @@
     <script>
         const params = new URLSearchParams(window.location.search);
         const userId = params.get('uid');
+        
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         window.OneSignalDeferred.push(async (OneSignal) => {
             await OneSignal.init({
@@ -28,23 +29,48 @@
                 serviceWorkerPath: "OneSignalSDKWorker.js",
                 serviceWorkerParam: { scope: "/heidia-push-bridge/" }
             });
+
+            // --- תוספת 1: זיהוי המשתמש ב-OneSignal ---
+            if (userId) {
+                console.log("Login User:", userId);
+                await OneSignal.login(userId);
+            }
+
             const btn = document.getElementById('reg-btn');
             const status = document.getElementById('status');
+            
             btn.onclick = async () => {
                 status.innerText = "מבקש הרשאה מהדפדפן...";
+                
+                // שימוש ב-optIn (יותר יציב) או Slidedown לבחירתך, נשארתי עם מה שעבד לך
                 await OneSignal.Slidedown.promptPush();
+                
                 const checkAndSync = async () => {
                     const playerId = OneSignal.User.PushSubscription.id;
                     if (playerId) {
                         status.innerText = "מסנכרן עם Heidia...";
-                        await fetch('https://app-e4891bd6.base44.app/functions/sendPushNotification', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ playerID: playerId, externalUserId: userId })
-                        });
-                        status.innerText = "✅ המכשיר קושר!";
+                        
+                        // הקוד שלך שעובד (Cloud Function)
+                        try {
+                            await fetch('https://app-e4891bd6.base44.app/functions/sendPushNotification', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ playerID: playerId, externalUserId: userId })
+                            });
+
+                            status.innerText = "✅ המכשיר קושר!";
+                            status.style.color = "green";
+                            
+                            // --- תוספת 2: העלמת הכפתור ---
+                            btn.style.display = 'none';
+
+                        } catch (e) {
+                            console.error(e);
+                            status.innerText = "שגיאה בסנכרון, אבל הרישום בוצע.";
+                        }
                     }
                 };
+                
                 OneSignal.User.PushSubscription.addEventListener("change", checkAndSync);
                 checkAndSync();
             };
