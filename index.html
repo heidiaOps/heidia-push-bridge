@@ -3,12 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <title>Heidia - אישור התראות</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <style>
         body { font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f8fafc; }
-        .box { background: white; padding: 40px; border-radius: 20px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 90%; }
-        button { background: #E11D48; color: white; border: none; padding: 16px 32px; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1.1rem; }
+        .box { background: white; padding: 40px; border-radius: 20px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 90%; width: 400px; }
+        button { background: #E11D48; color: white; border: none; padding: 16px 32px; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1.1rem; width: 100%; transition: opacity 0.3s; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
         #status { margin-top: 20px; color: #64748b; font-size: 0.9rem; }
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
@@ -16,62 +19,74 @@
         <h2>הפעלת התראות Heidia</h2>
         <p>לחץ כדי לקשר את המכשיר ולקבל עדכונים מהשטח.</p>
         <button id="reg-btn">אשר קבלת התראות</button>
-        <div id="status">ממתין לפעולה...</div>
+        <div id="status">טוען מערכת...</div>
     </div>
+
     <script>
+        // שליפת המזהה מהכתובת
         const params = new URLSearchParams(window.location.search);
         const userId = params.get('uid');
-        
+
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         window.OneSignalDeferred.push(async (OneSignal) => {
+            
+            // 1. אתחול
             await OneSignal.init({
                 appId: "c86fd007-74ba-4668-b186-52156233ead7",
-                serviceWorkerPath: "OneSignalSDKWorker.js",
-                serviceWorkerParam: { scope: "/heidia-push-bridge/" }
             });
 
-            // --- תוספת 1: זיהוי המשתמש ב-OneSignal ---
+            // 2. זיהוי המשתמש - זה מה שהיה חסר!
+            // אנחנו עושים את זה מיד כשהדף עולה
             if (userId) {
-                console.log("Login User:", userId);
+                console.log("Setting External User ID:", userId);
                 await OneSignal.login(userId);
             }
 
             const btn = document.getElementById('reg-btn');
             const status = document.getElementById('status');
-            
+            status.innerText = "מוכן לחיבור.";
+
             btn.onclick = async () => {
-                status.innerText = "מבקש הרשאה מהדפדפן...";
+                btn.disabled = true;
+                status.innerText = "מבקש אישור...";
                 
-                // שימוש ב-optIn (יותר יציב) או Slidedown לבחירתך, נשארתי עם מה שעבד לך
+                // בקשת אישור
                 await OneSignal.Slidedown.promptPush();
-                
+
+                // פונקציה שבודקת ומסנכרנת
                 const checkAndSync = async () => {
+                    // בדיקה כפולה: גם שהמשתמש מחובר וגם שיש לו מזהה מכשיר
                     const playerId = OneSignal.User.PushSubscription.id;
+                    
                     if (playerId) {
-                        status.innerText = "מסנכרן עם Heidia...";
+                        status.innerText = "שומר בבסיס הנתונים...";
                         
-                        // הקוד שלך שעובד (Cloud Function)
                         try {
+                            // שימוש ב-Cloud Function שעבד לך
                             await fetch('https://app-e4891bd6.base44.app/functions/sendPushNotification', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ playerID: playerId, externalUserId: userId })
                             });
 
-                            status.innerText = "✅ המכשיר קושר!";
-                            status.style.color = "green";
+                            status.innerText = "✅ המכשיר קושר בהצלחה!";
+                            status.style.color = "#10b981"; // ירוק
                             
-                            // --- תוספת 2: העלמת הכפתור ---
-                            btn.style.display = 'none';
+                            // העלמת הכפתור כמו שביקשת
+                            btn.classList.add('hidden');
 
                         } catch (e) {
                             console.error(e);
-                            status.innerText = "שגיאה בסנכרון, אבל הרישום בוצע.";
+                            // גם אם הקריאה לשרת נכשלה, הרישום לסינגל הצליח
+                            status.innerText = "✅ נרשם (שגיאת שרת)";
+                            btn.classList.add('hidden');
                         }
                     }
                 };
                 
+                // מאזין לשינויים (אם לוקח זמן לקבל ID)
                 OneSignal.User.PushSubscription.addEventListener("change", checkAndSync);
+                // בודק גם מיד
                 checkAndSync();
             };
         });
