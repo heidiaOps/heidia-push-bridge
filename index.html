@@ -1,53 +1,66 @@
-const userId = new URLSearchParams(window.location.search).get('uid');
+// פונקציה מרכזית שמופעלת בלחיצה על הכפתור האדום
+async function handleSubscription(userId) {
+    const statusEl = document.getElementById('status');
+    statusEl.innerText = "מבצע רישום... אנא המתן";
 
-window.OneSignal = window.OneSignal || [];
-OneSignal.push(function() {
-    OneSignal.init({
-        appId: "YOUR_APP_ID", // וודא שזה ה-ID הנכון!
-        safari_web_id: "YOUR_SAFARI_ID", // אם יש לך
-        notifyButton: { enable: false },
-    });
-
-    // ברגע שהדף עולה - ננסה להוציא את ה-ID
-    OneSignal.on('subscriptionChange', function (isSubscribed) {
+    OneSignal.push(async function() {
+        // 1. בקשת הרשאה והרשמה
+        await OneSignal.registerForPushNotifications();
+        
+        // 2. בדיקה אם המשתמש נרשם בהצלחה
+        const isSubscribed = await OneSignal.isPushNotificationsEnabled();
+        
         if (isSubscribed) {
-            registerAndSync();
+            // קבלת ה-ID החדש (בגרסה החדשה זה הדרך הבטוחה)
+            const deviceState = await OneSignal.getDeviceState();
+            const playerId = deviceState.userId;
+
+            if (playerId) {
+                console.log("OneSignal Player ID:", playerId);
+                await syncWithBase44(userId, playerId);
+            } else {
+                statusEl.innerText = "❌ שגיאה: לא הצלחנו לקבל מזהה מכשיר";
+            }
+        } else {
+            statusEl.innerText = "❌ הרישום נדחה. וודא שאישרת התראות בדפדפן.";
         }
     });
-});
-
-async function registerAndSync() {
-    const playerId = await OneSignal.getUserId();
-    if (playerId && userId) {
-        alert("נמצא Player ID: " + playerId); // בדיקה ויזואלית
-        await syncWithBase44(userId, playerId);
-    }
 }
 
-async function syncWithBase44(uid, pid) {
+async function syncWithBase44(userId, playerId) {
+    const tableId = 'PushSubscription';
     const apiKey = 'YOUR_BASE44_API_KEY';
-    // לוגיקת ה-Upsert (מניעת כפילויות)
-    const check = await fetch(`https://api.base44.app/v1/entities/PushSubscription/list`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filter: { user_id: { _eq: uid } } })
-    });
-    const existing = await check.json();
 
-    const url = existing.length > 0 
-        ? `https://api.base44.app/v1/entities/PushSubscription/${existing[0].id}`
-        : `https://api.base44.app/v1/entities/PushSubscription`;
-    
-    await fetch(url, {
-        method: existing.length > 0 ? 'PATCH' : 'POST',
-        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: uid, player_id: pid })
-    });
-    
-    document.getElementById('status').innerText = "✅ הרישום הושלם בהצלחה!";
-}
+    try {
+        // בדיקת כפילויות (Upsert)
+        const checkResp = await fetch(`https://api.base44.app/v1/entities/${tableId}/list`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filter: { user_id: { _eq: userId } } })
+        });
+        const existing = await checkResp.json();
 
-// פונקציית הכפתור האדום
-function askPermission() {
-    OneSignal.showNativePrompt();
+        let response;
+        if (existing.length > 0) {
+            // עדכון שורה קיימת (מונע כפילויות בטבלה)
+            response = await fetch(`https://api.base44.app/v1/entities/${tableId}/${existing[0].id}`, {
+                method: 'PATCH',
+                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ player_id: playerId })
+            });
+        } else {
+            // יצירת שורה חדשה
+            response = await fetch(`https://api.base44.app/v1/entities/${tableId}`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId, player_id: playerId })
+            });
+        }
+
+        if (response.ok) {
+            document.getElementById('status').innerText = "✅ המכשיר קושר בהצלחה! אפשר לסגור.";
+        }
+    } catch (err) {
+        document.getElementById('status').innerText = "❌ שגיאה בסנכרון מול בסיס הנתונים";
+    }
 }
