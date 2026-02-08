@@ -5,51 +5,67 @@
     <title>חיבור התראות - Heidia</title>
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignal.SDK.js" defer></script>
 </head>
-<body>
-    <div style="text-align: center; margin-top: 50px; font-family: sans-serif;">
-        <h1 id="status">מבצע חיבור מכשיר למערכת...</h1>
-        <button id="reg-btn" onclick="handleSubscription(userId)" style="padding: 20px; font-size: 20px; background: red; color: white; border: none; border-radius: 10px; cursor: pointer;">
-            לחץ כאן לאישור סופי
+<body style="font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background-color: #f4f7f6;">
+
+    <div style="background: white; padding: 40px; border-radius: 20px; shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; border: 1px solid #ddd;">
+        <h1 id="status" style="color: #333; margin-bottom: 20px;">חיבור מכשיר למערכת Heidia</h1>
+        <p style="color: #666; margin-bottom: 30px;">לחץ על הכפתור למטה כדי לאשר קבלת התראות במכשיר זה.</p>
+        
+        <button id="reg-btn" onclick="handleSubscription()" style="padding: 20px 40px; font-size: 20px; background: #ef4444; color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; transition: transform 0.2s;">
+            אשר והפעל התראות
         </button>
     </div>
 
     <script>
-        // שליחת ה-UID מהכתובת
+        // שליפת ה-ID מהכתובת (URL)
         const urlParams = new URLSearchParams(window.location.search);
-        const userId = urlParams.get('uid');
+        const userIdFromUrl = urlParams.get('uid');
 
         window.OneSignal = window.OneSignal || [];
         OneSignal.push(function() {
             OneSignal.init({
-                appId: "YOUR_ONESIGNAL_APP_ID_HERE", // שים כאן את ה-ID שלך!
+                appId: "YOUR_ONESIGNAL_APP_ID", // שים כאן את ה-ID מוואן סינגל
             });
         });
 
-        // הפונקציה ששלחת - עכשיו בתוך ה-Script
-        async function handleSubscription(userId) {
+        async function handleSubscription() {
             const statusEl = document.getElementById('status');
-            if (!userId) {
-                statusEl.innerText = "❌ שגיאה: חסר מזהה משתמש";
+            const btnEl = document.getElementById('reg-btn');
+
+            if (!userIdFromUrl) {
+                statusEl.innerText = "❌ שגיאה: לא זוהה מזהה משתמש";
                 return;
             }
 
-            OneSignal.push(async function() {
-                await OneSignal.registerForPushNotifications();
-                const deviceState = await OneSignal.getDeviceState();
-                const playerId = deviceState.userId;
+            statusEl.innerText = "מבצע רישום... המתן";
+            btnEl.disabled = true;
+            btnEl.style.opacity = "0.5";
 
-                if (playerId) {
-                    await syncWithBase44(userId, playerId);
-                } else {
-                    statusEl.innerText = "❌ שגיאה: לא התקבל מזהה מוואן סינגל";
+            OneSignal.push(async function() {
+                try {
+                    await OneSignal.registerForPushNotifications();
+                    const deviceState = await OneSignal.getDeviceState();
+                    const playerId = deviceState.userId;
+
+                    if (playerId) {
+                        await syncWithBase44(userIdFromUrl, playerId);
+                    } else {
+                        statusEl.innerText = "❌ שגיאה: לא התקבל מזהה מוואן סינגל";
+                        btnEl.disabled = false;
+                        btnEl.style.opacity = "1";
+                    }
+                } catch (e) {
+                    statusEl.innerText = "❌ שגיאה בתהליך הרישום";
+                    console.error(e);
                 }
             });
         }
 
         async function syncWithBase44(userId, playerId) {
             const tableId = 'PushSubscription';
-            const apiKey = 'YOUR_BASE44_API_KEY_HERE'; // שים כאן את המפתח שלך!
+            const apiKey = 'YOUR_BASE44_API_KEY'; // שים כאן את המפתח שלך
 
+            // בדיקת כפילויות (Upsert)
             const checkResp = await fetch(`https://api.base44.app/v1/entities/${tableId}/list`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -72,8 +88,10 @@
             });
 
             if (response.ok) {
-                document.getElementById('status').innerText = "✅ המכשיר קושר בהצלחה! ניתן לסגור";
+                document.getElementById('status').innerText = "✅ המכשיר קושר בהצלחה!";
                 document.getElementById('reg-btn').style.display = 'none';
+            } else {
+                document.getElementById('status').innerText = "❌ שגיאה בשמירת הנתונים בבייס";
             }
         }
     </script>
