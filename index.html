@@ -11,6 +11,7 @@
         button { background: #E11D48; color: white; border: none; padding: 16px 32px; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1.1rem; width: 100%; transition: all 0.3s; }
         button:disabled { background: #cbd5e1; cursor: wait; opacity: 0.7; }
         #status { margin-top: 20px; color: #64748b; font-size: 0.9rem; }
+        .debug { font-size: 10px; color: #94a3b8; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -20,6 +21,7 @@
         
         <button id="reg-btn" disabled>טוען מערכת...</button>
         <div id="status">מאתחל...</div>
+        <div id="debug" class="debug"></div>
     </div>
 
     <script>
@@ -36,60 +38,73 @@
 
             const btn = document.getElementById('reg-btn');
             const status = document.getElementById('status');
+            const debug = document.getElementById('debug');
 
-            // 2. זיהוי משתמש אגרסיבי - מיד בהתחלה!
+            // 2. הפעולה הכירורגית: ניקוי -> ואז הרשמה
             if (userId) {
-                status.innerText = "מזהה משתמש מול OneSignal...";
+                status.innerText = "מגדיר זהות משתמש...";
+                
                 try {
-                    // הפקודה הזו יוצרת את היוזר בסינגל. נקודה.
+                    // שלב א': ניתוק משתמשים קודמים (מונע התנגשויות)
+                    await OneSignal.logout();
+                    
+                    // שלב ב': חיבור המשתמש החדש
                     await OneSignal.login(userId);
-                    console.log("✅ User logged in:", userId);
+                    
+                    // בדיקה ויזואלית למסך: מה סינגל חושב עכשיו?
+                    debug.innerText = "OneSignal ID: " + OneSignal.User.externalId;
+                    console.log("Current External ID:", OneSignal.User.externalId);
+
                 } catch (e) {
-                    console.error("Login failed:", e);
+                    console.error("Login flow error:", e);
+                    debug.innerText = "שגיאה בזיהוי: " + e.message;
                 }
             }
 
-            // 3. רק אחרי שהלוגין רץ - משחררים את הכפתור
+            // 3. שחרור הכפתור
             btn.innerText = "אשר קבלת התראות";
             btn.disabled = false;
             status.innerText = "מוכן לחיבור.";
 
             btn.onclick = async () => {
                 btn.disabled = true;
-                status.innerText = "מבקש אישור דפדפן...";
+                status.innerText = "מבקש אישור...";
                 
                 try {
-                    // בקשת הרשאה
+                    // בקשת אישור
                     await OneSignal.Slidedown.promptPush();
 
-                    // המתנה וסנכרון לבייס
+                    // לוגיקת הסנכרון
                     const checkAndSync = async () => {
-                        // בדיקה אם המכשיר קיבל מזהה
-                        const playerId = OneSignal.User.PushSubscription.id;
-                        
+                        const playerId = OneSignal.User.PushSubscription.id; // מזהה המכשיר
+                        const currentUserId = OneSignal.User.externalId;     // מזהה המשתמש (חייב להיות מלא!)
+
+                        // עדכון הדיבאג על המסך
+                        debug.innerText = `Device: ${playerId?.substring(0,5)}... | User: ${currentUserId}`;
+
                         if (playerId) {
                             status.innerText = "מסנכרן לבייס...";
                             
-                            // השליחה לבייס (שעובדת לך)
+                            // אם ה-User ID ריק בסינגל, ננסה לדחוף אותו שוב בכוח
+                            if (!currentUserId && userId) {
+                                await OneSignal.login(userId);
+                            }
+
+                            // שליחה לבייס
                             await fetch('https://app-e4891bd6.base44.app/functions/sendPushNotification', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ playerID: playerId, externalUserId: userId })
                             });
 
-                            // הצלחה
                             status.innerText = "✅ המכשיר קושר בהצלחה!";
                             status.style.color = "green";
-                            btn.style.display = 'none'; // העלמת הכפתור
+                            btn.style.display = 'none';
                         }
                     };
 
                     OneSignal.User.PushSubscription.addEventListener("change", checkAndSync);
-                    
-                    // בדיקה יזומה למקרה שזה היה מהיר מדי
-                    if (OneSignal.User.PushSubscription.id) {
-                        checkAndSync();
-                    }
+                    checkAndSync(); // בדיקה יזומה
 
                 } catch (e) {
                     console.error(e);
