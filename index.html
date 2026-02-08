@@ -9,7 +9,7 @@
         body { font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f8fafc; }
         .box { background: white; padding: 40px; border-radius: 20px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 90%; width: 350px; }
         button { background: #E11D48; color: white; border: none; padding: 16px 32px; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1.1rem; width: 100%; transition: all 0.3s; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
+        button:disabled { background: #cbd5e1; cursor: wait; opacity: 0.7; }
         #status { margin-top: 20px; color: #64748b; font-size: 0.9rem; }
     </style>
 </head>
@@ -17,8 +17,8 @@
     <div class="box">
         <h2>הפעלת התראות Heidia</h2>
         <p>לחץ כדי לקשר את המכשיר ולקבל עדכונים.</p>
-        <button id="reg-btn">אשר קבלת התראות</button>
-        <div id="status">טוען...</div>
+        <button id="reg-btn" disabled>טוען מערכת...</button>
+        <div id="status">מאתחל...</div>
     </div>
 
     <script>
@@ -28,39 +28,43 @@
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         window.OneSignalDeferred.push(async (OneSignal) => {
             
-            // 1. אתחול בלבד (בלי לוגין עדיין)
+            // 1. אתחול
             await OneSignal.init({
                 appId: "c86fd007-74ba-4668-b186-52156233ead7",
             });
 
             const btn = document.getElementById('reg-btn');
             const status = document.getElementById('status');
+
+            // 2. זיהוי משתמש (חובה!)
+            if (userId) {
+                status.innerText = "מזהה משתמש...";
+                // אנחנו מחכים שהלוגין יסתיים לפני שמאפשרים לחיצה
+                await OneSignal.login(userId);
+                console.log("User Identified as:", OneSignal.User.externalId);
+            }
+
+            // 3. רק עכשיו פותחים את הכפתור
+            btn.innerText = "אשר קבלת התראות";
+            btn.disabled = false;
             status.innerText = "מוכן לחיבור.";
 
             btn.onclick = async () => {
                 btn.disabled = true;
+                status.innerText = "מבקש אישור...";
                 
                 try {
-                    // 2. שלב ראשון: חיבור המשתמש לסיגנל (Login)
-                    if (userId) {
-                        status.innerText = "מזהה משתמש...";
-                        console.log("Logging in:", userId);
-                        await OneSignal.login(userId);
-                    }
-
-                    // 3. שלב שני: בקשת אישור מהדפדפן
-                    status.innerText = "מבקש הרשאה...";
+                    // בקשת הרשאה
                     await OneSignal.Slidedown.promptPush();
 
-                    // 4. שלב שלישי: בדיקה ושמירה בבייס
+                    // המתנה לקבלת ה-ID של המכשיר
                     const checkAndSync = async () => {
-                        // בדיקה אם המכשיר נרשם
                         const playerId = OneSignal.User.PushSubscription.id;
                         
                         if (playerId) {
                             status.innerText = "שומר בבסיס הנתונים...";
                             
-                            // שליחה ל-Cloud Function שעבד לך מצוין
+                            // שליחה ל-Cloud Function (החלק שעבד לך)
                             await fetch('https://app-e4891bd6.base44.app/functions/sendPushNotification', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
@@ -69,17 +73,19 @@
 
                             status.innerText = "✅ המכשיר קושר בהצלחה!";
                             status.style.color = "green";
-                            btn.style.display = 'none'; // מעלים את הכפתור
+                            btn.style.display = 'none'; // מעלים כפתור
                         }
                     };
 
-                    // מאזין לשינויים בסטטוס ההרשמה
                     OneSignal.User.PushSubscription.addEventListener("change", checkAndSync);
-                    // בודק גם באופן יזום
-                    checkAndSync();
+                    
+                    // בדיקה יזומה למקרה שכבר יש ID
+                    if (OneSignal.User.PushSubscription.id) {
+                        checkAndSync();
+                    }
 
                 } catch (e) {
-                    console.error("Error:", e);
+                    console.error(e);
                     status.innerText = "שגיאה: " + e.message;
                     btn.disabled = false;
                 }
