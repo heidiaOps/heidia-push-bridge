@@ -14,45 +14,37 @@
 <body>
     <div class="box">
         <h2>הפעלת התראות Heidia</h2>
-        <p>לחץ על הכפתור כדי לקשר את המכשיר ולקבל עדכונים מהשטח.</p>
+        <p>לחץ כדי לקשר את המכשיר ולקבל עדכונים מהשטח.</p>
         <button id="reg-btn">אשר קבלת התראות</button>
         <div id="status">ממתין לפעולה...</div>
     </div>
-
     <script>
-        // שליפת ה-ID של המשתמש מהכתובת (למשל ?uid=123)
         const params = new URLSearchParams(window.location.search);
         const userId = params.get('uid');
-
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         window.OneSignalDeferred.push(async (OneSignal) => {
             await OneSignal.init({
-                appId: "c86fd007-74ba-4668-b186-52156233ead7", // ה-App ID של Heidia
+                appId: "c86fd007-74ba-4668-b186-52156233ead7",
+                serviceWorkerPath: "OneSignalSDKWorker.js",
+                serviceWorkerParam: { scope: "/heidia-push-bridge/" }
             });
-
             const btn = document.getElementById('reg-btn');
             const status = document.getElementById('status');
-
             btn.onclick = async () => {
                 status.innerText = "מבקש הרשאה מהדפדפן...";
                 await OneSignal.Slidedown.promptPush();
-                
-                // בדיקת ה-ID ושליחה לבאקאנד
                 const checkAndSync = async () => {
                     const playerId = OneSignal.User.PushSubscription.id;
                     if (playerId) {
-                        status.innerText = "סנכרון מול Heidia...";
+                        status.innerText = "מסנכרן עם Heidia...";
                         await fetch('https://app-e4891bd6.base44.app/functions/sendPushNotification', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ playerID: playerId, externalUserId: userId })
                         });
-                        status.innerText = "✅ המכשיר קושר בהצלחה! ניתן לסגור דף זה.";
-                        btn.disabled = true;
-                        btn.style.background = "#cbd5e1";
+                        status.innerText = "✅ המכשיר קושר!";
                     }
                 };
-
                 OneSignal.User.PushSubscription.addEventListener("change", checkAndSync);
                 checkAndSync();
             };
