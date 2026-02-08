@@ -7,87 +7,84 @@
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <style>
         body { font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f8fafc; }
-        .box { background: white; padding: 40px; border-radius: 20px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 90%; width: 400px; }
-        button { background: #E11D48; color: white; border: none; padding: 16px 32px; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1.1rem; width: 100%; transition: opacity 0.3s; }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .box { background: white; padding: 40px; border-radius: 20px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 90%; width: 350px; }
+        button { background: #E11D48; color: white; border: none; padding: 16px 32px; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1.1rem; width: 100%; transition: all 0.3s; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
         #status { margin-top: 20px; color: #64748b; font-size: 0.9rem; }
-        .hidden { display: none !important; }
     </style>
 </head>
 <body>
     <div class="box">
         <h2>הפעלת התראות Heidia</h2>
-        <p>לחץ כדי לקשר את המכשיר ולקבל עדכונים מהשטח.</p>
+        <p>לחץ כדי לקשר את המכשיר ולקבל עדכונים.</p>
         <button id="reg-btn">אשר קבלת התראות</button>
-        <div id="status">טוען מערכת...</div>
+        <div id="status">טוען...</div>
     </div>
 
     <script>
-        // שליפת המזהה מהכתובת
+        // 1. שליפת המזהה מהכתובת
         const params = new URLSearchParams(window.location.search);
         const userId = params.get('uid');
 
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         window.OneSignalDeferred.push(async (OneSignal) => {
             
-            // 1. אתחול
+            // 2. אתחול
             await OneSignal.init({
                 appId: "c86fd007-74ba-4668-b186-52156233ead7",
             });
-
-            // 2. זיהוי המשתמש - זה מה שהיה חסר!
-            // אנחנו עושים את זה מיד כשהדף עולה
-            if (userId) {
-                console.log("Setting External User ID:", userId);
-                await OneSignal.login(userId);
-            }
 
             const btn = document.getElementById('reg-btn');
             const status = document.getElementById('status');
             status.innerText = "מוכן לחיבור.";
 
+            // 3. התיקון הקריטי: חיבור היוזר ל-OneSignal
+            // זה מה שהיה חסר בקוד הקודם!
+            if (userId) {
+                console.log("Identifying User:", userId);
+                await OneSignal.login(userId);
+            }
+
             btn.onclick = async () => {
                 btn.disabled = true;
-                status.innerText = "מבקש אישור...";
+                status.innerText = "מבקש הרשאה...";
                 
-                // בקשת אישור
-                await OneSignal.Slidedown.promptPush();
-
-                // פונקציה שבודקת ומסנכרנת
-                const checkAndSync = async () => {
-                    // בדיקה כפולה: גם שהמשתמש מחובר וגם שיש לו מזהה מכשיר
-                    const playerId = OneSignal.User.PushSubscription.id;
+                try {
+                    // בקשת אישור
+                    await OneSignal.Slidedown.promptPush();
                     
-                    if (playerId) {
-                        status.innerText = "שומר בבסיס הנתונים...";
+                    // פונקציה לבדיקת הרישום ושמירה בבייס
+                    const checkAndSync = async () => {
+                        const playerId = OneSignal.User.PushSubscription.id;
                         
-                        try {
-                            // שימוש ב-Cloud Function שעבד לך
+                        if (playerId) {
+                            status.innerText = "שומר נתונים...";
+                            
+                            // קריאה לפונקציה שעבדה לך בבייס44
                             await fetch('https://app-e4891bd6.base44.app/functions/sendPushNotification', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ playerID: playerId, externalUserId: userId })
                             });
 
+                            // הצלחה!
                             status.innerText = "✅ המכשיר קושר בהצלחה!";
-                            status.style.color = "#10b981"; // ירוק
+                            status.style.color = "green";
                             
-                            // העלמת הכפתור כמו שביקשת
-                            btn.classList.add('hidden');
-
-                        } catch (e) {
-                            console.error(e);
-                            // גם אם הקריאה לשרת נכשלה, הרישום לסינגל הצליח
-                            status.innerText = "✅ נרשם (שגיאת שרת)";
-                            btn.classList.add('hidden');
+                            // 4. העלמת הכפתור (כמו שביקשת)
+                            btn.style.display = 'none';
                         }
-                    }
-                };
-                
-                // מאזין לשינויים (אם לוקח זמן לקבל ID)
-                OneSignal.User.PushSubscription.addEventListener("change", checkAndSync);
-                // בודק גם מיד
-                checkAndSync();
+                    };
+
+                    // בדיקה כפולה (גם מיד וגם בהאזנה לשינוי)
+                    OneSignal.User.PushSubscription.addEventListener("change", checkAndSync);
+                    checkAndSync();
+
+                } catch (e) {
+                    console.error(e);
+                    status.innerText = "שגיאה בתהליך הרישום";
+                    btn.disabled = false;
+                }
             };
         });
     </script>
