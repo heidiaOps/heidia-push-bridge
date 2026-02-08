@@ -11,7 +11,6 @@
         button { background: #E11D48; color: white; border: none; padding: 16px 32px; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1.1rem; width: 100%; transition: all 0.3s; }
         button:disabled { background: #cbd5e1; cursor: wait; opacity: 0.7; }
         #status { margin-top: 20px; color: #64748b; font-size: 0.9rem; }
-        .debug { font-size: 10px; color: #94a3b8; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -21,7 +20,6 @@
         
         <button id="reg-btn" disabled>טוען מערכת...</button>
         <div id="status">מאתחל...</div>
-        <div id="debug" class="debug"></div>
     </div>
 
     <script>
@@ -29,39 +27,29 @@
         const userId = params.get('uid');
 
         window.OneSignalDeferred = window.OneSignalDeferred || [];
+        
+        // הגדרת משתנה גלובלי לניהול הלולאה
+        let checkInterval;
+
         window.OneSignalDeferred.push(async (OneSignal) => {
             
-            // 1. אתחול
             await OneSignal.init({
                 appId: "c86fd007-74ba-4668-b186-52156233ead7",
             });
 
             const btn = document.getElementById('reg-btn');
             const status = document.getElementById('status');
-            const debug = document.getElementById('debug');
 
-            // 2. הפעולה הכירורגית: ניקוי -> ואז הרשמה
+            // 1. זיהוי המשתמש (בדיוק כמו בקוד שעבד)
             if (userId) {
-                status.innerText = "מגדיר זהות משתמש...";
-                
                 try {
-                    // שלב א': ניתוק משתמשים קודמים (מונע התנגשויות)
-                    await OneSignal.logout();
-                    
-                    // שלב ב': חיבור המשתמש החדש
                     await OneSignal.login(userId);
-                    
-                    // בדיקה ויזואלית למסך: מה סינגל חושב עכשיו?
-                    debug.innerText = "OneSignal ID: " + OneSignal.User.externalId;
-                    console.log("Current External ID:", OneSignal.User.externalId);
-
+                    console.log("Logged in:", userId);
                 } catch (e) {
-                    console.error("Login flow error:", e);
-                    debug.innerText = "שגיאה בזיהוי: " + e.message;
+                    console.error(e);
                 }
             }
 
-            // 3. שחרור הכפתור
             btn.innerText = "אשר קבלת התראות";
             btn.disabled = false;
             status.innerText = "מוכן לחיבור.";
@@ -74,23 +62,21 @@
                     // בקשת אישור
                     await OneSignal.Slidedown.promptPush();
 
-                    // לוגיקת הסנכרון
-                    const checkAndSync = async () => {
-                        const playerId = OneSignal.User.PushSubscription.id; // מזהה המכשיר
-                        const currentUserId = OneSignal.User.externalId;     // מזהה המשתמש (חייב להיות מלא!)
+                    status.innerText = "מוודא רישום...";
 
-                        // עדכון הדיבאג על המסך
-                        debug.innerText = `Device: ${playerId?.substring(0,5)}... | User: ${currentUserId}`;
+                    // 2. הלוגיקה של הריבוע האפור: לולאה שבודקת כל חצי שנייה
+                    let attempts = 0;
+                    checkInterval = setInterval(async () => {
+                        attempts++;
+                        const playerId = OneSignal.User.PushSubscription.id;
+                        const isOptedIn = OneSignal.User.PushSubscription.optedIn;
 
+                        // אם קיבלנו ID - מעולה!
                         if (playerId) {
-                            status.innerText = "מסנכרן לבייס...";
+                            clearInterval(checkInterval);
+                            status.innerText = "שומר בבסיס הנתונים...";
                             
-                            // אם ה-User ID ריק בסינגל, ננסה לדחוף אותו שוב בכוח
-                            if (!currentUserId && userId) {
-                                await OneSignal.login(userId);
-                            }
-
-                            // שליחה לבייס
+                            // שליחה לפונקציית הענן שעבדה לך
                             await fetch('https://app-e4891bd6.base44.app/functions/sendPushNotification', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
@@ -99,12 +85,16 @@
 
                             status.innerText = "✅ המכשיר קושר בהצלחה!";
                             status.style.color = "green";
-                            btn.style.display = 'none';
+                            btn.style.display = 'none'; // מעלים כפתור
+                        } 
+                        // אם עבר הרבה זמן (30 חצאי שניות = 15 שניות)
+                        else if (attempts > 30) {
+                            clearInterval(checkInterval);
+                            status.innerText = "התהליך מתארך... וודא שאישרת התראות.";
+                            btn.disabled = false;
+                            btn.innerText = "נסה שוב";
                         }
-                    };
-
-                    OneSignal.User.PushSubscription.addEventListener("change", checkAndSync);
-                    checkAndSync(); // בדיקה יזומה
+                    }, 500); // בודק כל חצי שנייה
 
                 } catch (e) {
                     console.error(e);
