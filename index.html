@@ -3,100 +3,119 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>אישור התראות</title>
-    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignal.SDK.js" async=""></script>
+    <title>חיבור התראות - Heidia</title>
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignal.SDK.js" defer></script>
     <style>
-        body { font-family: sans-serif; text-align: center; padding-top: 50px; background-color: #f0f2f5; }
-        button { background: #22c55e; color: white; padding: 20px 40px; font-size: 22px; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h1 { color: #333; }
-        #status { margin-top: 20px; font-size: 18px; color: #555; }
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background-color: #f8fafc; }
+        .card { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 90%; }
+        button { background: #3b82f6; color: white; border: none; padding: 16px 32px; font-size: 18px; border-radius: 12px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 20px; }
+        .log { margin-top: 20px; font-size: 13px; color: #94a3b8; background: #f1f5f9; padding: 10px; border-radius: 8px; text-align: left; direction: ltr; }
     </style>
 </head>
 <body>
 
-    <h1>אישור סופי</h1>
-    <p>לחץ פעם אחת כדי לסיים.</p>
-    <button id="btn" onclick="simpleRegister()">לחץ כאן וזהו</button>
-    <div id="status"></div>
+    <div class="card">
+        <h1>חיבור מכשיר</h1>
+        <p>לחץ כדי לאפשר קבלת עדכונים</p>
+        <button id="btn" onclick="register()">הפעל התראות</button>
+        <div id="log" class="log">מוכן לחיבור...</div>
+    </div>
 
     <script>
-        // --- המפתחות שלך (אל תיגע) ---
-        const APP_ID = "c86fd007-74ba-4668-b186-52156233ead7";
-        const API_KEY = "083d08d80a3f45318da8dddd408fc6a8";
+        // המפתחות שלך (הנכונים שעבדו)
+        const CONFIG = {
+            ONESIGNAL_APP_ID: "c86fd007-74ba-4668-b186-52156233ead7", 
+            BASE44_API_KEY: "083d08d80a3f45318da8dddd408fc6a8"      
+        };
+
+        const logEl = document.getElementById('log');
+        const btn = document.getElementById('btn');
+
+        function log(msg) {
+            logEl.innerText = msg;
+        }
 
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         OneSignalDeferred.push(function(OneSignal) {
-            OneSignal.init({ appId: APP_ID });
+            OneSignal.init({
+                appId: CONFIG.ONESIGNAL_APP_ID,
+            });
         });
 
-        function simpleRegister() {
-            const btn = document.getElementById('btn');
-            const status = document.getElementById('status');
+        async function register() {
+            btn.disabled = true;
+            btn.innerText = "מתחבר...";
+            
             const userId = new URLSearchParams(window.location.search).get('uid');
 
-            if (!userId) return alert("שגיאה: אין מזהה משתמש");
+            if (!userId) {
+                log("שגיאה: חסר מזהה משתמש בקישור");
+                return;
+            }
 
-            btn.disabled = true;
-            btn.innerText = "שומר...";
-            status.innerText = "אנא המתן...";
-
+            // זה הקוד המקורי שעבד
             OneSignalDeferred.push(async function(OneSignal) {
                 try {
-                    // 1. בקשת אישור (בלי לחכות יותר מדי)
-                    OneSignal.User.PushSubscription.optIn();
+                    log("מבקש הרשאה...");
+                    await OneSignal.User.PushSubscription.optIn();
 
-                    // 2. לולאה קצרה שתחפש את ה-ID כל חצי שנייה
-                    // זה עוקף את הבעיה של "תקוע במתחבר"
-                    let attempts = 0;
-                    const interval = setInterval(async () => {
-                        attempts++;
-                        const playerId = OneSignal.User.PushSubscription.id;
-
-                        if (playerId) {
-                            clearInterval(interval);
-                            // יש ID! שומרים מיד בבייס (יוצרים חדש תמיד)
-                            await forceCreateInBase44(userId, playerId);
-                        } else if (attempts > 10) { 
-                            // אם עברו 5 שניות ואין ID, ננסה לשמור בכל זאת כדי שהכפתור ייעלם
-                            // (המשתמש כנראה כבר רשום והדפדפן לא מחזיר את ה-ID מהר מספיק)
-                            clearInterval(interval);
-                            status.innerText = "לוקח זמן... מנסה לסיים.";
-                            // ננסה לקחת ID גם אם הוא ריק, העיקר לרשום את היוזר
-                            await forceCreateInBase44(userId, "unknown_id_" + Date.now()); 
-                        }
-                    }, 500);
-
+                    // בדיקה פשוטה: האם יש ID?
+                    let playerId = OneSignal.User.PushSubscription.id;
+                    
+                    if (playerId) {
+                        await syncBase44(userId, playerId);
+                    } else {
+                        log("ממתין לאישור בדפדפן...");
+                        OneSignal.User.PushSubscription.addEventListener("change", async (e) => {
+                            if (e.current.id) {
+                                await syncBase44(userId, e.current.id);
+                            }
+                        });
+                    }
                 } catch (e) {
-                    alert("שגיאה: " + e.message);
+                    log("שגיאה: " + e.message);
+                    btn.disabled = false;
                 }
             });
         }
 
-        async function forceCreateInBase44(uid, pid) {
-            const status = document.getElementById('status');
-            const btn = document.getElementById('btn');
+        async function syncBase44(userId, playerId) {
+            log("נרשם בהצלחה! שומר במערכת...");
             
-            // אנחנו עושים רק POST (יצירה). אם יהיו כפילויות - לא נורא.
-            // העיקר שהמערכת תראה שיש רשומה ותעלים את הכפתור.
+            const tableId = 'PushSubscription';
+            
             try {
-                await fetch("https://api.base44.app/v1/entities/PushSubscription", {
+                // בדיקה אם קיים
+                const check = await fetch(`https://api.base44.app/v1/entities/${tableId}/list`, {
                     method: 'POST',
-                    headers: { 'api_key': API_KEY, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_id: uid, player_id: pid })
+                    headers: { 'api_key': CONFIG.BASE44_API_KEY, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filter: { user_id: { _eq: userId } } })
+                });
+                const existing = await check.json();
+
+                let url = `https://api.base44.app/v1/entities/${tableId}`;
+                let method = 'POST';
+
+                if (existing && existing.length > 0) {
+                    url = `${url}/${existing[0].id}`;
+                    method = 'PATCH'; 
+                }
+
+                // שמירה
+                const res = await fetch(url, {
+                    method: method,
+                    headers: { 'api_key': CONFIG.BASE44_API_KEY, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId, player_id: playerId })
                 });
 
-                status.innerText = "✅ זהו! סיימנו.";
-                status.style.color = "green";
-                btn.style.display = "none";
-                
-                // סגירה אוטומטית של החלון אחרי שנייה
-                setTimeout(() => { window.close(); }, 2000);
-
-            } catch (e) {
-                console.error(e);
-                // גם אם יש שגיאה (למשל כפילות), נגיד למשתמש שהכל טוב
-                status.innerText = "✅ התהליך הושלם.";
-                btn.style.display = "none";
+                if (res.ok) {
+                    log("✅ המכשיר חובר בהצלחה!");
+                    btn.style.display = 'none';
+                } else {
+                    log("שגיאה בשמירה בבייס");
+                }
+            } catch (err) {
+                log("שגיאה בתקשורת: " + err.message);
             }
         }
     </script>
