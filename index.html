@@ -1,66 +1,81 @@
-// פונקציה מרכזית שמופעלת בלחיצה על הכפתור האדום
-async function handleSubscription(userId) {
-    const statusEl = document.getElementById('status');
-    statusEl.innerText = "מבצע רישום... אנא המתן";
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>חיבור התראות - Heidia</title>
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignal.SDK.js" defer></script>
+</head>
+<body>
+    <div style="text-align: center; margin-top: 50px; font-family: sans-serif;">
+        <h1 id="status">מבצע חיבור מכשיר למערכת...</h1>
+        <button id="reg-btn" onclick="handleSubscription(userId)" style="padding: 20px; font-size: 20px; background: red; color: white; border: none; border-radius: 10px; cursor: pointer;">
+            לחץ כאן לאישור סופי
+        </button>
+    </div>
 
-    OneSignal.push(async function() {
-        // 1. בקשת הרשאה והרשמה
-        await OneSignal.registerForPushNotifications();
-        
-        // 2. בדיקה אם המשתמש נרשם בהצלחה
-        const isSubscribed = await OneSignal.isPushNotificationsEnabled();
-        
-        if (isSubscribed) {
-            // קבלת ה-ID החדש (בגרסה החדשה זה הדרך הבטוחה)
-            const deviceState = await OneSignal.getDeviceState();
-            const playerId = deviceState.userId;
+    <script>
+        // שליחת ה-UID מהכתובת
+        const urlParams = new URLSearchParams(window.location.search);
+        const userId = urlParams.get('uid');
 
-            if (playerId) {
-                console.log("OneSignal Player ID:", playerId);
-                await syncWithBase44(userId, playerId);
-            } else {
-                statusEl.innerText = "❌ שגיאה: לא הצלחנו לקבל מזהה מכשיר";
-            }
-        } else {
-            statusEl.innerText = "❌ הרישום נדחה. וודא שאישרת התראות בדפדפן.";
-        }
-    });
-}
-
-async function syncWithBase44(userId, playerId) {
-    const tableId = 'PushSubscription';
-    const apiKey = 'YOUR_BASE44_API_KEY';
-
-    try {
-        // בדיקת כפילויות (Upsert)
-        const checkResp = await fetch(`https://api.base44.app/v1/entities/${tableId}/list`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filter: { user_id: { _eq: userId } } })
-        });
-        const existing = await checkResp.json();
-
-        let response;
-        if (existing.length > 0) {
-            // עדכון שורה קיימת (מונע כפילויות בטבלה)
-            response = await fetch(`https://api.base44.app/v1/entities/${tableId}/${existing[0].id}`, {
-                method: 'PATCH',
-                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ player_id: playerId })
+        window.OneSignal = window.OneSignal || [];
+        OneSignal.push(function() {
+            OneSignal.init({
+                appId: "YOUR_ONESIGNAL_APP_ID_HERE", // שים כאן את ה-ID שלך!
             });
-        } else {
-            // יצירת שורה חדשה
-            response = await fetch(`https://api.base44.app/v1/entities/${tableId}`, {
+        });
+
+        // הפונקציה ששלחת - עכשיו בתוך ה-Script
+        async function handleSubscription(userId) {
+            const statusEl = document.getElementById('status');
+            if (!userId) {
+                statusEl.innerText = "❌ שגיאה: חסר מזהה משתמש";
+                return;
+            }
+
+            OneSignal.push(async function() {
+                await OneSignal.registerForPushNotifications();
+                const deviceState = await OneSignal.getDeviceState();
+                const playerId = deviceState.userId;
+
+                if (playerId) {
+                    await syncWithBase44(userId, playerId);
+                } else {
+                    statusEl.innerText = "❌ שגיאה: לא התקבל מזהה מוואן סינגל";
+                }
+            });
+        }
+
+        async function syncWithBase44(userId, playerId) {
+            const tableId = 'PushSubscription';
+            const apiKey = 'YOUR_BASE44_API_KEY_HERE'; // שים כאן את המפתח שלך!
+
+            const checkResp = await fetch(`https://api.base44.app/v1/entities/${tableId}/list`, {
                 method: 'POST',
+                headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filter: { user_id: { _eq: userId } } })
+            });
+            const existing = await checkResp.json();
+
+            let url = `https://api.base44.app/v1/entities/${tableId}`;
+            let method = 'POST';
+
+            if (existing && existing.length > 0) {
+                url = `${url}/${existing[0].id}`;
+                method = 'PATCH';
+            }
+
+            const response = await fetch(url, {
+                method: method,
                 headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ user_id: userId, player_id: playerId })
             });
-        }
 
-        if (response.ok) {
-            document.getElementById('status').innerText = "✅ המכשיר קושר בהצלחה! אפשר לסגור.";
+            if (response.ok) {
+                document.getElementById('status').innerText = "✅ המכשיר קושר בהצלחה! ניתן לסגור";
+                document.getElementById('reg-btn').style.display = 'none';
+            }
         }
-    } catch (err) {
-        document.getElementById('status').innerText = "❌ שגיאה בסנכרון מול בסיס הנתונים";
-    }
-}
+    </script>
+</body>
+</html>
