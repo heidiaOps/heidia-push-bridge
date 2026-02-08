@@ -1,47 +1,53 @@
-// פונקציה מרכזית לרישום ושמירה
-async function handleSubscription(userId) {
-    const statusEl = document.getElementById('status');
-    
-    // 1. רישום מול OneSignal (לוודא שיופיע בדאשבורד)
-    OneSignal.push(async function() {
-        await OneSignal.registerForPushNotifications();
-        const playerId = await OneSignal.getUserId();
+const userId = new URLSearchParams(window.location.search).get('uid');
 
-        if (playerId) {
-            // 2. שמירה בבייס44 בשיטת Upsert (מניעת כפילויות)
-            await syncWithBase44(userId, playerId);
-        } else {
-            statusEl.innerText = "❌ שגיאה: לא התקבל מזהה מכשיר מוואן סינגל";
+window.OneSignal = window.OneSignal || [];
+OneSignal.push(function() {
+    OneSignal.init({
+        appId: "YOUR_APP_ID", // וודא שזה ה-ID הנכון!
+        safari_web_id: "YOUR_SAFARI_ID", // אם יש לך
+        notifyButton: { enable: false },
+    });
+
+    // ברגע שהדף עולה - ננסה להוציא את ה-ID
+    OneSignal.on('subscriptionChange', function (isSubscribed) {
+        if (isSubscribed) {
+            registerAndSync();
         }
     });
+});
+
+async function registerAndSync() {
+    const playerId = await OneSignal.getUserId();
+    if (playerId && userId) {
+        alert("נמצא Player ID: " + playerId); // בדיקה ויזואלית
+        await syncWithBase44(userId, playerId);
+    }
 }
 
-async function syncWithBase44(userId, playerId) {
-    const tableId = 'PushSubscription';
+async function syncWithBase44(uid, pid) {
     const apiKey = 'YOUR_BASE44_API_KEY';
-
-    // בדיקה אם המשתמש כבר קיים
-    const checkResp = await fetch(`https://api.base44.app/v1/entities/${tableId}/list`, {
+    // לוגיקת ה-Upsert (מניעת כפילויות)
+    const check = await fetch(`https://api.base44.app/v1/entities/PushSubscription/list`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filter: { user_id: { _eq: userId } } })
+        body: JSON.stringify({ filter: { user_id: { _eq: uid } } })
     });
-    const existing = await checkResp.json();
+    const existing = await check.json();
 
-    if (existing.length > 0) {
-        // עדכון שורה קיימת
-        await fetch(`https://api.base44.app/v1/entities/${tableId}/${existing[0].id}`, {
-            method: 'PATCH',
-            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ player_id: playerId })
-        });
-    } else {
-        // יצירת שורה חדשה
-        await fetch(`https://api.base44.app/v1/entities/${tableId}`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId, player_id: playerId })
-        });
-    }
-    document.getElementById('status').innerText = "✅ המכשיר קושר בהצלחה! אפשר לסגור.";
+    const url = existing.length > 0 
+        ? `https://api.base44.app/v1/entities/PushSubscription/${existing[0].id}`
+        : `https://api.base44.app/v1/entities/PushSubscription`;
+    
+    await fetch(url, {
+        method: existing.length > 0 ? 'PATCH' : 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: uid, player_id: pid })
+    });
+    
+    document.getElementById('status').innerText = "✅ הרישום הושלם בהצלחה!";
+}
+
+// פונקציית הכפתור האדום
+function askPermission() {
+    OneSignal.showNativePrompt();
 }
