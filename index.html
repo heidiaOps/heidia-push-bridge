@@ -4,30 +4,32 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>חיבור התראות - Heidia</title>
-    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignal.SDK.js" defer></script>
+    
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignal.SDK.js" defer onerror="handleScriptError()"></script>
+    
     <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background-color: #f8fafc; }
-        .card { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); text-align: center; max-width: 400px; width: 90%; }
-        h1 { margin-top: 0; color: #334155; }
-        p { color: #64748b; margin-bottom: 30px; }
-        button { background: #3b82f6; color: white; border: none; padding: 16px 32px; font-size: 18px; border-radius: 12px; cursor: pointer; width: 100%; font-weight: bold; transition: all 0.2s; }
-        button:hover { background: #2563eb; transform: translateY(-2px); }
-        button:disabled { background: #cbd5e1; cursor: not-allowed; transform: none; }
-        .log { margin-top: 20px; font-size: 13px; color: #94a3b8; background: #f1f5f9; padding: 10px; border-radius: 8px; text-align: left; direction: ltr; min-height: 40px; }
-        .success { color: #10b981; font-weight: bold; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background-color: #f1f5f9; }
+        .card { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); text-align: center; max-width: 400px; width: 90%; }
+        h1 { margin-top: 0; color: #1e293b; font-size: 24px; }
+        p { color: #64748b; margin-bottom: 30px; line-height: 1.5; }
+        button { background: #3b82f6; color: white; border: none; padding: 16px 32px; font-size: 18px; border-radius: 12px; cursor: pointer; width: 100%; font-weight: 600; transition: all 0.2s; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.5); }
+        button:hover { background: #2563eb; transform: translateY(-2px); box-shadow: 0 6px 8px -1px rgba(59, 130, 246, 0.6); }
+        button:disabled { background: #cbd5e1; cursor: not-allowed; transform: none; box-shadow: none; color: #94a3b8; }
+        .log { margin-top: 20px; font-size: 13px; color: #64748b; background: #f8fafc; padding: 12px; border-radius: 8px; text-align: left; direction: ltr; border: 1px solid #e2e8f0; min-height: 20px; font-family: monospace; }
+        .success { color: #10b981; } .error { color: #ef4444; }
     </style>
 </head>
 <body>
 
     <div class="card">
         <h1 id="title">חיבור מכשיר</h1>
-        <p>לחץ כדי לאפשר קבלת עדכונים מהמערכת</p>
+        <p>לחץ על הכפתור למטה כדי לאשר קבלת התראות ועדכונים מהמערכת.</p>
         <button id="btn" onclick="register()">הפעל התראות</button>
-        <div id="log" class="log">ממתין לפעולה...</div>
+        <div id="log" class="log">טוען מערכת...</div>
     </div>
 
     <script>
-        // --- המפתחות שלך כבר בפנים (אל תיגע) ---
+        // --- מפתחות המערכת (כבר מעודכנים) ---
         const CONFIG = {
             ONESIGNAL_APP_ID: "c86fd007-74ba-4668-b186-52156233ead7", 
             BASE44_API_KEY: "083d08d80a3f45318da8dddd408fc6a8"      
@@ -35,22 +37,43 @@
 
         const logEl = document.getElementById('log');
         const btn = document.getElementById('btn');
+        let isOneSignalLoaded = false;
 
         function log(msg) {
             logEl.innerText = msg;
             console.log(msg);
         }
 
+        function handleScriptError() {
+            log("❌ שגיאה: חוסם פרסומות מונע את הטעינה. נסה לבטל AdBlock.");
+            btn.innerText = "שגיאת חוסם פרסומות";
+            btn.style.backgroundColor = "#ef4444";
+        }
+
         // אתחול OneSignal
         window.OneSignalDeferred = window.OneSignalDeferred || [];
         OneSignalDeferred.push(async function(OneSignal) {
+            isOneSignalLoaded = true;
             await OneSignal.init({
                 appId: CONFIG.ONESIGNAL_APP_ID,
             });
-            log("המערכת מוכנה.");
+            log("המערכת מוכנה. לחץ על הכפתור.");
         });
 
+        // "רשת ביטחון" למקרה שהספרייה נתקעת
+        setTimeout(() => {
+            if (!isOneSignalLoaded && logEl.innerText === "טוען מערכת...") {
+                log("⚠️ הטעינה איטית. בדוק את החיבור שלך.");
+            }
+        }, 5000);
+
         async function register() {
+            // בדיקת הגנות לפני הכל
+            if (typeof OneSignalDeferred === 'undefined') {
+                log("שגיאה קריטית: הספרייה לא נטענה.");
+                return;
+            }
+
             btn.disabled = true;
             btn.innerText = "מתחבר...";
             
@@ -58,28 +81,29 @@
             const userId = urlParams.get('uid');
 
             if (!userId) {
-                log("שגיאה: חסר מזהה משתמש בקישור");
+                log("שגיאה: הקישור לא תקין (חסר מזהה משתמש)");
                 return;
             }
 
-            // שימוש ב-OneSignalDeferred כדי להבטיח שהספרייה נטענה
+            // שימוש בטוח בתוך המעטפת של OneSignal
             window.OneSignalDeferred.push(async function(OneSignal) {
                 try {
-                    log("מבקש הרשאה מהדפדפן...");
+                    log("מבקש אישור...");
                     
-                    // הפקודה הישירה להקפצת החלונית
+                    // שיטה ישירה להקפצת החלונית
                     await OneSignal.User.PushSubscription.optIn();
 
-                    log("בודק האם אושר...");
-                    
-                    // בדיקה האם יש לנו ID
+                    log("בודק סטטוס...");
+                    // המתנה קצרה לוודא שהסטטוס התעדכן
+                    await new Promise(r => setTimeout(r, 1000));
+
                     let playerId = OneSignal.User.PushSubscription.id;
                     
                     if (playerId) {
                         await syncBase44(userId, playerId);
                     } else {
-                        // אם אין ID מיד, נחכה שהוא ייווצר
-                        log("ממתין לאישור...");
+                        log("ממתין לאישור בדפדפן...");
+                        // מאזין לשינוי בהרשמה
                         OneSignal.User.PushSubscription.addEventListener("change", async (e) => {
                             if (e.current.id) {
                                 await syncBase44(userId, e.current.id);
@@ -87,7 +111,8 @@
                         });
                     }
                 } catch (e) {
-                    log("שגיאה: " + e.message);
+                    console.error(e);
+                    log("שגיאה: " + (e.message || "לא ניתן היה להשלים את הרישום"));
                     btn.disabled = false;
                     btn.innerText = "נסה שוב";
                 }
@@ -95,28 +120,30 @@
         }
 
         async function syncBase44(userId, playerId) {
-            log("נרשם! שומר במערכת...");
+            log("נרשם בהצלחה! מעדכן את המערכת...");
             
             const tableId = 'PushSubscription';
             
             try {
-                // 1. בדיקה אם המשתמש כבר קיים
+                // 1. בדיקת כפילויות
                 const check = await fetch(`https://api.base44.app/v1/entities/${tableId}/list`, {
                     method: 'POST',
                     headers: { 'api_key': CONFIG.BASE44_API_KEY, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filter: { user_id: { _eq: userId } } })
                 });
+                
+                if (!check.ok) throw new Error("Base44 List Failed");
                 const existing = await check.json();
 
                 let url = `https://api.base44.app/v1/entities/${tableId}`;
-                let method = 'POST';
+                let method = 'POST'; // ברירת מחדל: יצירה חדשה
 
                 if (existing && existing.length > 0) {
-                    url = `${url}/${existing[0].id}`;
-                    method = 'PATCH'; 
+                    url = `${url}/${existing[0].id}`; // אם קיים -> נעדכן אותו
+                    method = 'PATCH';
                 }
 
-                // 2. שמירה/עדכון
+                // 2. שמירה סופית
                 const res = await fetch(url, {
                     method: method,
                     headers: { 'api_key': CONFIG.BASE44_API_KEY, 'Content-Type': 'application/json' },
@@ -125,13 +152,14 @@
 
                 if (res.ok) {
                     log("✅ המכשיר חובר בהצלחה! אפשר לסגור.");
+                    document.getElementById('title').innerText = "חובר בהצלחה!";
+                    document.getElementById('title').className = "success";
                     btn.style.display = 'none';
-                    document.getElementById('title').className = 'success';
                 } else {
                     log("שגיאה בשמירה: " + res.status);
                 }
             } catch (err) {
-                log("שגיאה בתקשורת: " + err.message);
+                log("שגיאת תקשורת: " + err.message);
             }
         }
     </script>
