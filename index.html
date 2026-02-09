@@ -2,113 +2,138 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>Heidia - תיקון חיבור</title>
+    <title>Heidia - איפוס וחיבור מחדש</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <style>
-        body { font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f8fafc; }
-        .box { background: white; padding: 40px; border-radius: 20px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 90%; width: 350px; }
-        button { background: #E11D48; color: white; border: none; padding: 16px 32px; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1.1rem; width: 100%; transition: all 0.3s; }
-        button:disabled { background: #cbd5e1; cursor: wait; opacity: 0.7; }
-        #status { margin-top: 20px; color: #64748b; font-size: 0.9rem; white-space: pre-wrap; }
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f1f5f9; }
+        .box { background: white; padding: 30px; border-radius: 16px; text-align: center; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); width: 90%; max-width: 400px; }
+        button { background: #ef4444; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 18px; width: 100%; margin-bottom: 20px; transition: all 0.3s; }
+        button:disabled { background: #94a3b8; cursor: not-allowed; }
+        
+        /* לוג ויזואלי כדי שתראה בדיוק איפה זה נתקע */
+        #console { 
+            background: #1e293b; color: #34d399; 
+            font-family: monospace; font-size: 12px; 
+            padding: 15px; border-radius: 8px; 
+            text-align: left; direction: ltr; 
+            height: 200px; overflow-y: auto; 
+            white-space: pre-wrap;
+            width: 100%;
+            box-sizing: border-box;
+        }
     </style>
 </head>
 <body>
+
     <div class="box">
-        <h2>בדיקת סטטוס התראות</h2>
-        <p>מבצע בדיקת תקינות מול השרת...</p>
+        <h2>איפוס מערכת מלא</h2>
+        <p>לחץ כדי למחוק נתונים ישנים וליצור חדשים.</p>
+        <button id="btn" onclick="hardReset()">בצע איפוס וחיבור מחדש 🔄</button>
         
-        <button id="reg-btn" disabled>טוען מערכת...</button>
-        <div id="status">מאתחל...</div>
+        <div id="console">ממתין לפעולה...</div>
     </div>
 
     <script>
+        // פונקציית כתיבה למסך
+        function log(msg) {
+            const el = document.getElementById('console');
+            const time = new Date().toLocaleTimeString();
+            el.innerHTML += `\n[${time}] ${msg}`;
+            el.scrollTop = el.scrollHeight;
+            console.log(msg);
+        }
+
         const params = new URLSearchParams(window.location.search);
         const userId = params.get('uid');
 
         window.OneSignalDeferred = window.OneSignalDeferred || [];
-        window.OneSignalDeferred.push(async (OneSignal) => {
-            
+        
+        OneSignalDeferred.push(async function(OneSignal) {
             await OneSignal.init({
                 appId: "c86fd007-74ba-4668-b186-52156233ead7",
             });
+            log("✅ OneSignal אותחל.");
+        });
 
-            const btn = document.getElementById('reg-btn');
-            const status = document.getElementById('status');
+        async function hardReset() {
+            const btn = document.getElementById('btn');
+            btn.disabled = true;
+            btn.innerText = "מנקה נתונים...";
 
-            // 1. קודם כל מתחברים
-            if (userId) {
-                await OneSignal.login(userId);
-            }
-
-            // 2. פונקציה לבדיקת "דופק" אמיתי
-            const checkRealStatus = async () => {
-                const sub = OneSignal.User.PushSubscription;
-                console.log("Status check:", sub.optedIn, sub.id);
-
-                // התנאי הקריטי: גם יש ID וגם הוא OptedIn (פעיל)
-                if (sub.id && sub.optedIn) {
-                    return true;
-                }
-                return false;
-            };
-
-            btn.innerText = "תקן חיבור והפעל";
-            btn.disabled = false;
-            status.innerText = "מוכן לתיקון.";
-
-            btn.onclick = async () => {
-                btn.disabled = true;
-                status.innerText = "מתקן רישום מול OneSignal...";
-                
+            OneSignalDeferred.push(async function(OneSignal) {
                 try {
-                    // הפעולה הזו מכריחה רישום מחדש גם אם היוזר "מחוק" או "חסום" לוגית
+                    // 1. השלב הקריטי: מחיקת הזהות הישנה
+                    log("🗑️ מבצע Logout לנתונים ישנים...");
+                    await OneSignal.logout();
+                    log("✅ נתונים ישנים נמחקו.");
+
+                    // השהייה קצרה כדי לוודא שהמחיקה נקלטה
+                    await new Promise(r => setTimeout(r, 1000));
+
+                    // 2. כניסה מחדש
+                    if (userId) {
+                        log("🔄 מבצע Login למשתמש: " + userId);
+                        await OneSignal.login(userId);
+                    }
+
+                    // 3. רישום מחדש בכוח
+                    log("📣 מבצע Opt-In מחדש...");
                     await OneSignal.User.PushSubscription.optIn();
                     
-                    // בקשת הרשאה מחדש
+                    // 4. בדיקת מצב ההרשאות
+                    if (Notification.permission === 'denied') {
+                        log("❌ שגיאה: ההתראות חסומות בדפדפן!");
+                        log("⚠️ עליך ללחוץ על המנעול 🔒 ולשחרר חסימה.");
+                        btn.style.background = "gray";
+                        btn.innerText = "ההתראות חסומות";
+                        return;
+                    }
+
+                    // בקשת אישור
                     await OneSignal.Slidedown.promptPush();
 
-                    // לולאה שמחכה ל"דופק"
+                    // 5. לולאת המתנה ל-ID *חדש*
+                    log("⏳ ממתין לקבלת מזהה חדש מהשרת...");
+                    
                     let attempts = 0;
                     const interval = setInterval(async () => {
                         attempts++;
-                        const isAlive = await checkRealStatus();
-
-                        if (isAlive) {
+                        const sub = OneSignal.User.PushSubscription;
+                        
+                        // אנחנו רוצים לוודא שיש ID ושהוא מחובר
+                        if (sub.id && sub.optedIn) {
                             clearInterval(interval);
+                            log("🎉 התקבל מזהה חדש: " + sub.id.substring(0, 5) + "...");
                             
-                            // רק עכשיו, כשאנחנו בטוחים שהוא חי, שולחים לבייס
-                            status.innerText = "מעדכן בסיס נתונים...";
-                            const playerId = OneSignal.User.PushSubscription.id;
-                            
+                            // שליחה לבייס
+                            log("🚀 שולח ל-Base44...");
                             await fetch('https://app-e4891bd6.base44.app/functions/sendPushNotification', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ playerID: playerId, externalUserId: userId })
+                                body: JSON.stringify({ playerID: sub.id, externalUserId: userId })
                             });
 
-                            status.innerText = "✅ תוקן וחובר בהצלחה!";
-                            status.style.color = "green";
-                            btn.style.display = 'none';
-                        } 
-                        else if (attempts > 10) {
-                            if (Notification.permission === 'denied') {
+                            log("✅✅✅ הכל הושלם! בדוק את הדשבורד.");
+                            btn.style.background = "#10b981";
+                            btn.innerText = "הצלחה!";
+                        } else {
+                            if (attempts % 5 === 0) log("...עדיין מנסה להתחבר (" + attempts + ")");
+                            if (attempts > 20) {
                                 clearInterval(interval);
-                                status.innerText = "❌ שגיאה: הדפדפן חוסם את ההתראות.\nלחץ על המנעול 🔒 למעלה ואפשר התראות.";
-                                status.style.color = "red";
-                                btn.innerText = "נסה שוב אחרי ביטול החסימה";
+                                log("❌ זמן עבר. נסה לרענן את הדף.");
                                 btn.disabled = false;
+                                btn.innerText = "נסה שוב";
                             }
                         }
                     }, 1000);
 
                 } catch (e) {
-                    console.error(e);
-                    status.innerText = "שגיאה: " + e.message;
+                    log("❌ שגיאה: " + e.message);
                     btn.disabled = false;
                 }
-            };
-        });
+            });
+        }
     </script>
 </body>
 </html>
